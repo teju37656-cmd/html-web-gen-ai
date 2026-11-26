@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meeting Action Item Extractor</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 32px 18px; min-height: 100vh;
+  font-family: Arial, sans-serif; background: #f1f5f9; color: #172033;
+}
+.container {
+  max-width: 900px; margin: 0 auto; padding: 28px;
+  background: white; border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(15,23,42,.09);
+}
+h1 { margin: 0 0 8px; text-align: center; color: #2563eb; }
+.subtitle { text-align: center; color: #64748b; margin: 0 0 26px; }
+label { display: block; font-weight: 700; margin: 18px 0 9px; }
+textarea {
+  display: block; width: 100%; min-height: 220px; resize: vertical;
+  padding: 14px; border: 1px solid #cbd5e1; border-radius: 10px;
+  font: 15px/1.5 Arial, sans-serif; color: #172033;
+}
+textarea:focus { outline: 2px solid #93c5fd; border-color: #2563eb; }
+.actions { display: flex; flex-wrap: wrap; gap: 9px; margin: 14px 0 24px; }
+button {
+  border: 0; border-radius: 8px; padding: 11px 16px;
+  background: #2563eb; color: white; font-weight: 700; cursor: pointer;
+}
+button:hover { filter: brightness(.93); }
+button.secondary { background: #475569; }
+button.danger { background: #dc2626; }
+h2 { margin: 26px 0 12px; font-size: 20px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; }
+th { background: #eff6ff; color: #1e40af; }
+.empty { color: #64748b; text-align: center; padding: 22px; }
+#message { min-height: 22px; color: #0f766e; font-size: 14px; }
+.note { margin-top: 18px; color: #64748b; font-size: 13px; line-height: 1.5; }
+@media (max-width: 560px) { .container { padding: 19px; } body { padding: 15px 10px; } }
+</style>
+</head>
+<body>
+<main class="container">
+  <h1>Meeting Action Item Extractor</h1>
+  <p class="subtitle">Turn meeting notes into a clear list of owners, tasks, and deadlines.</p>
+
+  <label for="notes">Meeting notes</label>
+  <textarea id="notes" placeholder="Example:
+Alex: Prepare initial wireframes by Wednesday.
+John: Complete homepage design by Friday.
+David: Submit project report by Monday.">Website revamp kickoff
+Alex: Prepare initial wireframes by Wednesday.
+John: Complete homepage design by Friday.
+David: Submit project report by Monday.</textarea>
+
+  <div class="actions">
+    <button id="extractBtn">Extract actions</button>
+    <button id="copyBtn" class="secondary">Copy JSON</button>
+    <button id="downloadBtn" class="secondary">Download JSON</button>
+    <button id="clearBtn" class="danger">Clear</button>
+  </div>
+
+  <h2>Extracted action items</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Owner</th><th>Task</th><th>Deadline</th></tr></thead>
+      <tbody id="results"><tr><td class="empty" colspan="3">No actions extracted yet.</td></tr></tbody>
+    </table>
+  </div>
+  <p id="message" role="status" aria-live="polite"></p>
+  <p class="note">Runs locally in your browser. No hosting, Python, API key, or internet connection is needed. Offline matching recognizes lines in the format “Name: task by deadline”.</p>
+</main>
+<script>
+"use strict";
+let actions = [];
+
+function extractActions() {
+  const notes = document.getElementById("notes").value;
+  const pattern = /^([^:\n]+):\s*(.+?)\s+by\s+([^\n.]+)[.]?$/i;
+  actions = [];
+
+  for (const line of notes.split(/\r?\n/)) {
+    const match = line.trim().match(pattern);
+    if (match) {
+      actions.push({
+        owner: match[1].trim(),
+        task: match[2].trim(),
+        deadline: match[3].trim()
+      });
+    }
+  }
+  renderResults();
+  document.getElementById("message").textContent =
+    `${actions.length} action item(s) extracted.`;
+}
+
+function renderResults() {
+  const tbody = document.getElementById("results");
+  tbody.replaceChildren();
+  if (actions.length === 0) {
+    const row = tbody.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = 3;
+    cell.className = "empty";
+    cell.textContent = "No matching action items found. Use: Name: task by deadline";
+    return;
+  }
+  for (const action of actions) {
+    const row = tbody.insertRow();
+    for (const value of [action.owner, action.task, action.deadline]) {
+      row.insertCell().textContent = value;
+    }
+  }
+}
+
+async function copyResults() {
+  const text = JSON.stringify({actions}, null, 2);
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const temp = document.createElement("textarea");
+      temp.value = text;
+      document.body.appendChild(temp);
+      temp.select();
+      const copied = document.execCommand("copy");
+      temp.remove();
+      if (!copied) throw new Error("Copy unavailable");
+    }
+    document.getElementById("message").textContent = "JSON copied to clipboard.";
+  } catch {
+    document.getElementById("message").textContent = "Could not copy automatically. Use Download JSON instead.";
+  }
+}
+
+function downloadJSON() {
+  const blob = new Blob([JSON.stringify({actions}, null, 2)], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "meeting_actions.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  document.getElementById("message").textContent = "JSON download started.";
+}
+
+function clearAll() {
+  document.getElementById("notes").value = "";
+  actions = [];
+  renderResults();
+  document.getElementById("message").textContent = "Cleared.";
+}
+
+document.getElementById("extractBtn").addEventListener("click", extractActions);
+document.getElementById("copyBtn").addEventListener("click", copyResults);
+document.getElementById("downloadBtn").addEventListener("click", downloadJSON);
+document.getElementById("clearBtn").addEventListener("click", clearAll);
+</script>
+</body>
+</html>
